@@ -102,7 +102,11 @@ This class includes its own `basket_id` field, plus links to collections of basi
 	>>> print(baseket.eggs[1].egg_id)
 	regular
 
-**Note:** URL-linked models are not cached at this time. There will actually be a request for each `Egg` URL **each time** you access `basket.eggs`. Depending on your needs, you may be able to get around that using [requests-cache](https://pypi.python.org/pypi/requests-cache) until that behavior is added.
+**Note:** Associated models are loaded lazily, so they don't make requests until
+at least one of their attributes is accessed. Only one request will be made per 
+instance per association. If your API doesn't change much, you can cache all your
+requests easily using
+[requests-cache](https://pypi.python.org/pypi/requests-cache).
 
 ## Testing
 

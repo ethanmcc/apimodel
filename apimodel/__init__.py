@@ -1,4 +1,8 @@
+import importlib
+
 import requests
+
+
 try:
     from urlparse import urlparse
 except ImportError:
@@ -13,7 +17,14 @@ class APIModel(object):
     finders = {}
     fields = {}
 
-    def __init__(self, data=None, **kwargs):
+    def __init__(self, data=None, lazy_load=False, **kwargs):
+        if lazy_load:
+            self.lazy_load = {'data': data, 'kwargs': kwargs}
+        else:
+            self.lazy_load = False
+            self.parse_inputs(data, kwargs)
+
+    def parse_inputs(self, data, kwargs):
         if data:
             if urlparse(str(data)).scheme != '':
                 self.load_data(data)
@@ -40,12 +51,42 @@ class APIModel(object):
             raise ValueError('Invalid JSON in response: {0}'.format(
                 response.content))
 
+    def string_to_class(self, type_):
+        if isinstance(type_, str):
+            try:
+                mod = importlib.import_module(self.__module__)
+                type_ = getattr(mod, type_)
+            except Exception:
+                raise ValueError(
+                    'Unable to find class "{0}"'.format(type_))
+        return type_
+
+    @staticmethod
+    def get_submodels_lazily(type_, data):
+        if issubclass(type_, APIModel):
+            result = type_(data, lazy_load=True)
+        else:
+            result = type_(data)
+        return result
+
     def __getattr__(self, field):
+        if self.lazy_load:
+            self.parse_inputs(self.lazy_load['data'], self.lazy_load['kwargs'])
+            self.lazy_load = False
+
         if field in self.fields:
-            type_ = self.fields[field]
+            type_ = self.string_to_class(self.fields[field])
             if isinstance(type_, list):
-                collection_type = type_[0]
-                return [collection_type(i) for i in self._data.get(field, [])]
-            return type_(self._data.get(field, None))
+                collection_type = self.string_to_class(type_[0])
+                collection = []
+                for data in self._data.get(field, []):
+                    collection.append(
+                        self.get_submodels_lazily(collection_type, data))
+                result = collection
+            else:
+                result = self.get_submodels_lazily(type_,
+                                                   self._data.get(field, None))
+            setattr(self, field, result)
+            return result
         else:
             raise AttributeError

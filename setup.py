@@ -4,7 +4,7 @@ from distutils.core import setup
 setup(
     name='apimodel',
     packages=['apimodel'],
-    version='0.1',
+    version='0.2',
     description='API-backed Django-style model',
     author='Ethan McCreadie',
     author_email='ethanmcc@gmail.com',

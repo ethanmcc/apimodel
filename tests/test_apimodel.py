@@ -18,6 +18,7 @@ SERVER_BASKET_JSON = json.dumps({
             'candy_id': 'mycandy',
         }
     ],
+    'egg': SERVER_EGG_URL.format('organic'),
 })
 SERVER_EGG_JSON_1 = json.dumps({'egg_id': 'organic'})
 SERVER_EGG_JSON_2 = json.dumps({'egg_id': 'regular'})
@@ -60,8 +61,9 @@ class Basket(APIModel):
 
     fields = {
         'basket_id': str,
-        'candies': [Candy],
+        'candies': ['Candy'],
         'eggs': [Egg],
+        'egg': Egg,
     }
 
 
@@ -135,3 +137,47 @@ class DescribeSubclassInstance(TestCase):
         self.assertIsInstance(self.model.eggs[0], Egg)
         self.assertIsInstance(self.model.eggs[1], Egg)
         self.assertIn(self.model.eggs[0].egg_id, ['organic', 'regular'])
+
+
+class DescribeRequestBehavior(TestCase):
+    @responses.activate
+    def test_one_response_given(self):
+        responses.add(responses.GET, SERVER_BASKET_URL.format('myid'),
+                      body=SERVER_BASKET_JSON, content_type='application/json')
+        self.model = Basket(basket_id='myid')
+        self.assertEqual(len(responses.calls), 1)
+
+    @responses.activate
+    def test_caches_individual_attributes(self):
+        responses.add(responses.GET, SERVER_BASKET_URL.format('myid'),
+                      body=SERVER_BASKET_JSON, content_type='application/json')
+        responses.add(responses.GET, SERVER_EGG_URL.format('organic'),
+                      body=SERVER_EGG_JSON_1, content_type='application/json')
+        self.model = Basket(basket_id='myid')
+        self.assertEqual(len(responses.calls), 1)
+        self.model.egg.egg_id
+        self.assertEqual(len(responses.calls), 2)
+        self.model.egg.egg_id
+        self.assertEqual(len(responses.calls), 2)
+
+
+    @responses.activate
+    def test_lazy_loading_of_collections(self):
+        responses.add(responses.GET, SERVER_BASKET_URL.format('myid'),
+                      body=SERVER_BASKET_JSON, content_type='application/json')
+        responses.add(responses.GET, SERVER_EGG_URL.format('organic'),
+                      body=SERVER_EGG_JSON_1, content_type='application/json')
+        responses.add(responses.GET, SERVER_EGG_URL.format('regular'),
+                      body=SERVER_EGG_JSON_2, content_type='application/json')
+        self.model = Basket(basket_id='myid')
+        self.model.eggs
+        self.assertEqual(len(responses.calls), 1)
+        self.model.eggs[0]
+        self.assertEqual(len(responses.calls), 1)
+        self.model.eggs[0].egg_id
+        self.assertEqual(len(responses.calls), 2)
+        self.model.eggs[1]
+        self.assertEqual(len(responses.calls), 2)
+        self.model.eggs[1].egg_id
+        self.assertEqual(len(responses.calls), 3)
+

@@ -11,3 +11,4 @@ Dockerfile
 .ropeproject
 django_root/vendor
 *.swp
+dist/
