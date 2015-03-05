@@ -5,7 +5,7 @@ except ImportError:
     from urllib.parse import urlparse
 
 
-class NotFound(Exception):
+class NotFound(BaseException):
     pass
 
 
@@ -32,7 +32,8 @@ class APIModel(object):
     def load_data(self, url):
         response = requests.get(url)
         if response.status_code != 200:
-            raise NotFound
+            raise NotFound(
+                'Received status code {0}'.format(response.status_code))
         try:
             self._data = response.json()
         except ValueError:
