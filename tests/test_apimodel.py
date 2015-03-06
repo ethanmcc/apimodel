@@ -19,6 +19,7 @@ SERVER_BASKET_JSON = json.dumps({
         }
     ],
     'egg': SERVER_EGG_URL.format('organic'),
+    'empty': None,
 })
 SERVER_EGG_JSON_1 = json.dumps({'egg_id': 'organic'})
 SERVER_EGG_JSON_2 = json.dumps({'egg_id': 'regular'})
@@ -64,6 +65,7 @@ class Basket(APIModel):
         'candies': ['Candy'],
         'eggs': [Egg],
         'egg': Egg,
+        'empty': str,
     }
 
 
@@ -94,6 +96,10 @@ class DescribeSubclassAPIModel(TestCase):
         model = self.model(dict(basket_id='myid'))
         self.assertIsInstance(model, self.model)
         self.assertEqual(model.basket_id, 'myid')
+
+    def test_can_handle_null_value(self):
+        model = self.model(dict(basket_id='myid'))
+        self.assertIsNone(model.empty)
 
 
 class DescribeBadJSONRequest(TestCase):
