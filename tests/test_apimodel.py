@@ -3,11 +3,14 @@ import json
 
 import responses
 
-from apimodel import APIModel, NotFound
+from apimodel import APICollection, APIModel, NotFound
 
 SERVER_BASKET_URL = 'http://example.com/v1/baskets/{0}/'
+# TODO: responses does not support mocking querystring requests
+SERVER_BASKET_SEARCH_URL = 'http://example.com/v1/baskets/basket_id={0}'
 SERVER_EGG_URL = 'http://example.com/v1/eggs/{0}/'
-SERVER_BASKET_JSON = json.dumps({
+SERVER_EGG_COLLECTION_URL = 'http://example.com/v1/eggs/'
+BASKET1_DATA = {
     'basket_id': 'myid',
     'eggs': [
         SERVER_EGG_URL.format('organic'),
@@ -20,9 +23,18 @@ SERVER_BASKET_JSON = json.dumps({
     ],
     'egg': SERVER_EGG_URL.format('organic'),
     'empty': None,
-})
+}
+BASKET2_DATA = BASKET1_DATA.copy()
+BASKET2_DATA['basket_id'] = 'myid2'
+SERVER_BASKET_JSON = json.dumps(BASKET1_DATA)
 SERVER_EGG_JSON_1 = json.dumps({'egg_id': 'organic'})
 SERVER_EGG_JSON_2 = json.dumps({'egg_id': 'regular'})
+SERVER_EGG_COLLECTION = json.dumps([
+    {'egg_id': 'organic'},
+    {'egg_id': 'regular'},
+])
+SERVER_EMPTY_EGG_COLLECTION = json.dumps([])
+SERVER_BASKET2_COLLECTION = json.dumps([BASKET2_DATA])
 
 
 class DescribeAPIModel(TestCase):
@@ -38,6 +50,21 @@ class DescribeAPIModel(TestCase):
 
     def test_can_not_instantiate(self):
         self.assertRaises(NotImplementedError, self.model)
+
+
+class DescribeAPICollection(TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.collection = APICollection
+
+    def test_should_have_empty_finders(self):
+        self.assertEqual(self.collection.finders, {})
+
+    def test_should_have_null_model(self):
+        self.assertIsNone(self.collection.model)
+
+    def test_can_not_instantiate(self):
+        self.assertRaises(NotImplementedError, self.collection)
 
 
 class Candy(APIModel):
@@ -67,6 +94,19 @@ class Basket(APIModel):
         'egg': Egg,
         'empty': str,
     }
+
+
+class EggCollection(APICollection):
+    url = 'http://example.com/v1/eggs/'
+    model = Egg
+
+
+class BasketCollection(APICollection):
+    finders = {
+        'basket_id': SERVER_BASKET_SEARCH_URL,
+    }
+
+    model = Basket
 
 
 class DescribeSubclassAPIModel(TestCase):
@@ -187,3 +227,72 @@ class DescribeRequestBehavior(TestCase):
         self.model.eggs[1].egg_id
         self.assertEqual(len(responses.calls), 3)
 
+
+class DescribeCollectionInstance(TestCase):
+    @classmethod
+    @responses.activate
+    def setUpClass(cls):
+        responses.add(responses.GET, SERVER_EGG_COLLECTION_URL,
+                      body=SERVER_EGG_COLLECTION,
+                      content_type='application/json')
+        cls.collection = EggCollection()
+
+    def test_should_have_models(self):
+        models = self.collection.all()
+        self.assertEqual(len(models), 2)
+        for model in models:
+            self.assertIsInstance(model, Egg)
+
+    def test_first_should_return_model(self):
+        model = self.collection.first()
+        self.assertIsInstance(model, Egg)
+
+
+class DescribeEmptyCollectionInstance(TestCase):
+    @classmethod
+    @responses.activate
+    def setUpClass(cls):
+        responses.add(responses.GET, SERVER_EGG_COLLECTION_URL,
+                      body=SERVER_EMPTY_EGG_COLLECTION,
+                      content_type='application/json')
+        cls.collection = EggCollection()
+
+    def test_first_should_return_none(self):
+        model = self.collection.first()
+        self.assertIsNone(model)
+
+
+class DescribeCollectionWithFinder(TestCase):
+    @classmethod
+    @responses.activate
+    def setUpClass(cls):
+        responses.add(responses.GET, SERVER_BASKET_SEARCH_URL.format('myid2'),
+                      body=SERVER_BASKET2_COLLECTION,
+                      content_type='application/json')
+        cls.collection = BasketCollection(basket_id='myid2')
+
+    def test_should_have_models(self):
+        self.assertEqual(len(self.collection.all()), 1)
+
+    def test_first_should_return_model(self):
+        model = self.collection.first()
+        self.assertIsInstance(model, Basket)
+
+
+class DescribeEmptyCollectionWithFinder(TestCase):
+    @classmethod
+    @responses.activate
+    def setUpClass(cls):
+        import logging
+        logging.error(SERVER_BASKET_SEARCH_URL.format('myid2'))
+        responses.add(responses.GET, SERVER_BASKET_SEARCH_URL.format('myid2'),
+                      body=json.dumps([]),
+                      content_type='application/json')
+        cls.collection = BasketCollection(basket_id='myid2')
+
+    def test_should_have_models(self):
+        self.assertEqual(len(self.collection.all()), 0)
+
+    def test_first_should_return_none(self):
+        model = self.collection.first()
+        self.assertIsNone(model)

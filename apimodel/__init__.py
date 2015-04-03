@@ -13,16 +13,12 @@ class NotFound(BaseException):
     pass
 
 
-class APIModel(object):
+class APIResource(object):
     finders = {}
-    fields = {}
+    url = None
 
-    def __init__(self, data=None, lazy_load=False, **kwargs):
-        if lazy_load:
-            self._lazy_load = {'data': data, 'kwargs': kwargs}
-        else:
-            self._lazy_load = False
-            self._parse_inputs(data, kwargs)
+    def __init__(self, data=None, **kwargs):
+        self._parse_inputs(data, kwargs)
 
     def _parse_inputs(self, data, kwargs):
         if data:
@@ -30,6 +26,8 @@ class APIModel(object):
                 self._load_data(data)
             else:
                 self._data = data
+        elif not kwargs and self.url:
+            self._load_data(self.url)
         elif not self.finders:
             raise NotImplementedError
         else:
@@ -50,6 +48,33 @@ class APIModel(object):
         except ValueError:
             raise ValueError('Invalid JSON in response: {0}'.format(
                 response.content))
+
+
+class APICollection(APIResource):
+    model = None
+    _models = None
+
+    def __init__(self, data=None, **kwargs):
+        super(APICollection, self).__init__(data, **kwargs)
+        self._models = [self.model(data) for data in self._data]
+
+    def all(self):
+        return self._models
+
+    def first(self):
+        if self._models:
+            return self._models[0]
+
+
+class APIModel(APIResource):
+    fields = {}
+
+    def __init__(self, data=None, lazy_load=False, **kwargs):
+        if lazy_load:
+            self._lazy_load = {'data': data, 'kwargs': kwargs}
+        else:
+            self._lazy_load = False
+            super(APIModel, self).__init__(data, **kwargs)
 
     def _string_to_class(self, type_):
         if isinstance(type_, str):
