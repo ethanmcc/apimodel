@@ -87,7 +87,7 @@ class APIModel(APIResource):
         return type_
 
     @staticmethod
-    def _get_submodels_lazily(type_, data):
+    def _get_submodel_lazily(type_, data):
         if data is None:
             result = None
         elif issubclass(type_, APIModel):
@@ -108,10 +108,10 @@ class APIModel(APIResource):
                 collection = []
                 for data in self._data.get(field, []):
                     collection.append(
-                        self._get_submodels_lazily(collection_type, data))
+                        self._get_submodel_lazily(collection_type, data))
                 result = collection
             else:
-                result = self._get_submodels_lazily(type_,
+                result = self._get_submodel_lazily(type_,
                                                     self._data.get(field,
                                                                    None))
             setattr(self, field, result)
