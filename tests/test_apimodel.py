@@ -431,15 +431,6 @@ class DescribeEmptyAPIModelField(BaseTestAPIModelField):
         self.assertIsNone(self.result)
 
 
-class DescribeInvalidAPIModelField(TestCase):
-    field_class = APIModelField
-    wrapper_func = object
-
-    def test_should_fail(self):
-        self.assertRaises(
-            TypeError, self.field_class, model=self.wrapper_func)
-
-
 class DescribeNonEmptyAPIModelField(BaseTestAPIModelField):
     field_class = APIModelField
     data = json.loads(SERVER_EGG_JSON_2)
@@ -464,15 +455,6 @@ class DescribeEmptyAPICollectionField(BaseTestAPICollectionField):
 
     def test_should_return_none(self):
         self.assertEqual(self.result.all(), [])
-
-
-class DescribeInvalidAPICollectionField(TestCase):
-    field_class = APICollectionField
-    wrapper_func = object
-
-    def test_should_fail(self):
-        self.assertRaises(
-            TypeError, self.field_class, model=self.wrapper_func)
 
 
 class DescribeNonEmptyAPICollectionField(BaseTestAPICollectionField):

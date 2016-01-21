@@ -94,16 +94,6 @@ class APIModel(APIResource):
             raise AttributeError(
                 'Field name {} not found in model'.format(field_name))
 
-    def _string_to_class(self, type_):
-        if isinstance(type_, str):
-            try:
-                mod = importlib.import_module(self.__module__)
-                type_ = getattr(mod, type_)
-            except Exception:
-                raise ValueError(
-                    'Unable to find class "{0}"'.format(type_))
-        return type_
-
 
 class APIField(object):
     def __init__(self, wrapper_func):
@@ -118,11 +108,21 @@ class APIModelField(APIField):
     _type = APIModel
 
     def __init__(self, model):
-        if not issubclass(model, self._type):
-            raise TypeError(
-                'model argument must be of type APIModel, not {}'.format(
-                    type(model)))
         super().__init__(wrapper_func=model)
+
+    def load(self, data, parent=None):
+        self.wrapper_func = self._string_to_class(self.wrapper_func, parent)
+        return super().load(data=data, parent=parent)
+
+    def _string_to_class(self, type_, parent):
+        if isinstance(type_, str):
+            try:
+                mod = importlib.import_module(parent.__module__)
+                type_ = getattr(mod, type_)
+            except Exception:
+                raise ValueError(
+                    'Unable to find class "{0}"'.format(type_))
+        return type_
 
 
 class APICollectionField(APIModelField):
@@ -131,6 +131,7 @@ class APICollectionField(APIModelField):
         super().__init__(model=model)
 
     def load(self, data, parent=None):
+        self.wrapper_func = self._string_to_class(self.wrapper_func, parent)
         if self.url:
             data = self.url.format(parent)
         return APICollection(model=self.wrapper_func, data=data)
