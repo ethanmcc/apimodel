@@ -1,12 +1,7 @@
 import importlib
+from urllib.parse import urlparse
 
 import requests
-
-
-try:
-    from urlparse import urlparse
-except ImportError:
-    from urllib.parse import urlparse
 
 
 class NotFound(BaseException):
