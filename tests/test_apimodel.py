@@ -48,9 +48,6 @@ class DescribeAPIModel(TestCase):
     def test_should_have_empty_fields(self):
         self.assertEqual(self.model.fields, {})
 
-    def test_can_not_instantiate(self):
-        self.assertRaises(NotImplementedError, self.model)
-
 
 class DescribeAPICollection(TestCase):
     @classmethod
@@ -63,9 +60,6 @@ class DescribeAPICollection(TestCase):
     def test_should_have_null_model(self):
         self.assertIsNone(self.collection.model)
 
-    def test_can_not_instantiate(self):
-        self.assertRaises(NotImplementedError, self.collection)
-
 
 class Candy(APIModel):
     fields = {
@@ -76,7 +70,9 @@ class Candy(APIModel):
 class Egg(APIModel):
     fields = {
         'egg_id': str,
+        'basket_id': str,
     }
+
     finders = {
         'basket_id': SERVER_BASKET_URL,
     }
@@ -89,10 +85,32 @@ class Basket(APIModel):
 
     fields = {
         'basket_id': str,
-        'candies': ['Candy'],
-        'eggs': [Egg],
+        'candies': APICollection(model=Candy, lazy_load=True),
+        'eggs': 'EggCollection',
         'egg': Egg,
         'empty': str,
+    }
+
+
+class CandyCollection(APICollection):
+    model = Candy
+
+
+class BetterBasket(APIModel):
+    finders = {
+        'basket_id': SERVER_BASKET_URL,
+    }
+
+    fields = {
+        'basket_id': str,
+        'candies': CandyCollection,
+        'eggs': 'EggCollection',
+        'egg': Egg,
+        'empty': str,
+    }
+
+    collection_finders = {
+        'eggs': '%sbasket_id={0.basket_id}' % SERVER_EGG_COLLECTION_URL,
     }
 
 
@@ -170,9 +188,8 @@ class DescribeSubclassInstance(TestCase):
         self.assertEqual(self.model.basket_id, 'myid')
 
     def test_populates_collections(self):
-        self.assertIsInstance(self.model.candies[0], Candy)
-        self.assertEqual(self.model.candies[0].candy_id,
-                         'mycandy')
+        self.assertIsInstance(self.model.candies.first(), Candy)
+        self.assertEqual(self.model.candies.first().candy_id, 'mycandy')
 
     @responses.activate
     def test_populates_collections_from_urls(self):
@@ -180,9 +197,9 @@ class DescribeSubclassInstance(TestCase):
                       body=SERVER_EGG_JSON_1, content_type='application/json')
         responses.add(responses.GET, SERVER_EGG_URL.format('regular'),
                       body=SERVER_EGG_JSON_2, content_type='application/json')
-        self.assertIsInstance(self.model.eggs[0], Egg)
-        self.assertIsInstance(self.model.eggs[1], Egg)
-        self.assertIn(self.model.eggs[0].egg_id, ['organic', 'regular'])
+        self.assertIsInstance(self.model.eggs.first(), Egg)
+        self.assertIsInstance(self.model.eggs.all()[1], Egg)
+        self.assertIn(self.model.eggs.first().egg_id, ['organic', 'regular'])
 
 
 class DescribeRequestBehavior(TestCase):
@@ -206,7 +223,6 @@ class DescribeRequestBehavior(TestCase):
         self.model.egg.egg_id
         self.assertEqual(len(responses.calls), 2)
 
-
     @responses.activate
     def test_lazy_loading_of_collections(self):
         responses.add(responses.GET, SERVER_BASKET_URL.format('myid'),
@@ -216,15 +232,16 @@ class DescribeRequestBehavior(TestCase):
         responses.add(responses.GET, SERVER_EGG_URL.format('regular'),
                       body=SERVER_EGG_JSON_2, content_type='application/json')
         self.model = Basket(basket_id='myid')
-        self.model.eggs
         self.assertEqual(len(responses.calls), 1)
-        self.model.eggs[0]
+        self.model.eggs.all()
         self.assertEqual(len(responses.calls), 1)
-        self.model.eggs[0].egg_id
+        self.model.eggs.first()
+        self.assertEqual(len(responses.calls), 1)
+        self.model.eggs.first().egg_id
         self.assertEqual(len(responses.calls), 2)
-        self.model.eggs[1]
+        self.model.eggs.all()[1]
         self.assertEqual(len(responses.calls), 2)
-        self.model.eggs[1].egg_id
+        self.model.eggs.all()[1].egg_id
         self.assertEqual(len(responses.calls), 3)
 
 
@@ -283,8 +300,6 @@ class DescribeEmptyCollectionWithFinder(TestCase):
     @classmethod
     @responses.activate
     def setUpClass(cls):
-        import logging
-        logging.error(SERVER_BASKET_SEARCH_URL.format('myid2'))
         responses.add(responses.GET, SERVER_BASKET_SEARCH_URL.format('myid2'),
                       body=json.dumps([]),
                       content_type='application/json')
@@ -296,3 +311,47 @@ class DescribeEmptyCollectionWithFinder(TestCase):
     def test_first_should_return_none(self):
         model = self.collection.first()
         self.assertIsNone(model)
+
+
+class DescribeModelWithCollectionFinderAndEmptyCollection(TestCase):
+    @classmethod
+    @responses.activate
+    def setUpClass(cls):
+        responses.add(responses.GET,
+                      SERVER_BASKET_URL.format('myid2'),
+                      json=BASKET2_DATA)
+        responses.add(responses.GET,
+                      '{}basket_id=myid2'.format(SERVER_EGG_COLLECTION_URL),
+                      body=json.dumps([]),
+                      content_type='application/json')
+        cls.model = BetterBasket(basket_id='myid2')
+        cls.eggs = cls.model.eggs.all()
+        cls.egg = cls.model.eggs.first()
+
+    def test_should_have_models(self):
+        self.assertEqual(len(self.eggs), 0)
+
+    def test_first_should_return_none(self):
+        self.assertIsNone(self.egg)
+
+
+class DescribeModelWithCollectionFinderAndCollection(TestCase):
+    @classmethod
+    @responses.activate
+    def setUpClass(cls):
+        responses.add(responses.GET,
+                      SERVER_BASKET_URL.format('myid2'),
+                      json=BASKET2_DATA)
+        responses.add(responses.GET,
+                      '{}basket_id=myid2'.format(SERVER_EGG_COLLECTION_URL),
+                      body=SERVER_EGG_COLLECTION,
+                      content_type='application/json')
+        cls.model = BetterBasket(basket_id='myid2')
+        cls.eggs = cls.model.eggs.all()
+        cls.egg = cls.model.eggs.first()
+
+    def test_should_have_models(self):
+        self.assertEqual(len(self.eggs), 2)
+
+    def test_first_should_return_none(self):
+        self.assertEqual(self.egg.egg_id, 'organic')

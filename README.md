@@ -83,13 +83,13 @@ Without any `finders`, the only way to instantiate a structure-only model direct
 	is retrieved by urls provided in the baskets endpoint.
 			:
     finders = 	{
-        'basket_id': 'http://example.com/v1/baskets/{0}/'	,
+        'basket_id': 'http://example.com/v1/baskets/{0}/',
     	}	
 
     fields = 	{
-        'basket_id': str	,
-        'candies': [Candy]	,
-        'eggs': [Egg],
+        'basket_id': str,
+        'candies': APICollection(model=Candy),
+        'eggs': APICollection(model=Egg),
    	}
 	    
 This class includes its own `basket_id` field, plus links to collections of basic and structure-only models. When I insantiate this model, it gives me access to the `Candy` objects that are defined within its JSON, and also to the `Egg` models, whose URLs are included in the JSON.
