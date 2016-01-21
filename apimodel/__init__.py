@@ -49,16 +49,6 @@ class APIResource(object):
             raise ValueError('Invalid JSON in response: {0}'.format(
                 response.content))
 
-    @staticmethod
-    def _get_submodel_lazily(type_, data):
-        if data is None:
-            result = None
-        elif issubclass(type_, APIModel):
-            result = type_(data, lazy_load=True)
-        else:
-            result = type_(data)
-        return result
-
 
 class APICollection(APIResource):
     model = None
@@ -68,20 +58,20 @@ class APICollection(APIResource):
             self.model = model
         super(APICollection, self).__init__(*args, **kwargs)
 
-    def _do_lazy_load(self):
+    def _load(self, lazy_load):
         if self._lazy_load:
             self._parse_inputs(**self._lazy_load)
             self._lazy_load = False
         if not hasattr(self, '_models'):
             self._models = [
-                self.model(data=d, lazy_load=True) for d in self._data]
+                self.model(data=d, lazy_load=lazy_load) for d in self._data]
 
     def all(self):
-        self._do_lazy_load()
+        self._load(lazy_load=False)
         return self._models
 
     def first(self):
-        self._do_lazy_load()
+        self._load(lazy_load=True)
         if self._models:
             return self._models[0]
 
@@ -89,34 +79,20 @@ class APICollection(APIResource):
 class APIModel(APIResource):
     fields = {}
 
-    def __getattr__(self, field):
+    def __getattr__(self, field_name):
         if self._lazy_load:
             self._parse_inputs(**self._lazy_load)
             self._lazy_load = False
 
-        if field in self.fields:
-            type_ = self._string_to_class(self.fields[field])
-            if isinstance(type_, APICollection) or \
-                    issubclass(type_, APICollection):
-                if field in self.collection_finders:
-                    result = type_(
-                        data=self.collection_finders[field].format(self),
-                        lazy_load=True,
-                    )
-                else:
-                    data = self._data.get(field, [])
-                    if isinstance(type_, APICollection):
-                        result = APICollection(model=type_.model, data=data,
-                                               lazy_load=True)
-                    else:
-                        result = type_(data=data, lazy_load=True)
-            else:
-                result = self._get_submodel_lazily(type_,
-                                                   self._data.get(field, None))
-            setattr(self, field, result)
+        if field_name in self.fields:
+            field = self.fields[field_name]
+            data = self._data.get(field_name)
+            result = field.load(data, self)
+            setattr(self, field_name, result)
             return result
         else:
-            raise AttributeError
+            raise AttributeError(
+                'Field name {} not found in model'.format(field_name))
 
     def _string_to_class(self, type_):
         if isinstance(type_, str):
@@ -127,3 +103,34 @@ class APIModel(APIResource):
                 raise ValueError(
                     'Unable to find class "{0}"'.format(type_))
         return type_
+
+
+class APIField(object):
+    def __init__(self, wrapper_func):
+        self.wrapper_func = wrapper_func
+
+    def load(self, data, parent=None):
+        if data is not None:
+            return self.wrapper_func(data)
+
+
+class APIModelField(APIField):
+    _type = APIModel
+
+    def __init__(self, model):
+        if not issubclass(model, self._type):
+            raise TypeError(
+                'model argument must be of type APIModel, not {}'.format(
+                    type(model)))
+        super().__init__(wrapper_func=model)
+
+
+class APICollectionField(APIModelField):
+    def __init__(self, model, url=None):
+        self.url = url
+        super().__init__(model=model)
+
+    def load(self, data, parent=None):
+        if self.url:
+            data = self.url.format(parent)
+        return APICollection(model=self.wrapper_func, data=data)
