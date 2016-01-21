@@ -236,6 +236,8 @@ class DescribeRequestBehavior(TestCase):
         self.assertEqual(len(responses.calls), 1)
         self.model.eggs.first()
         self.assertEqual(len(responses.calls), 1)
+        self.assertEqual(self.model.eggs.count(), 2)
+        self.assertEqual(len(responses.calls), 1)
         self.model.eggs.first().egg_id
         self.assertEqual(len(responses.calls), 2)
         self.model.eggs.all()[1]
@@ -253,6 +255,8 @@ class DescribeRequestBehavior(TestCase):
         responses.add(responses.GET, SERVER_EGG_URL.format('regular'),
                       body=SERVER_EGG_JSON_2, content_type='application/json')
         self.model = Basket(basket_id='myid')
+        self.assertEqual(len(responses.calls), 1)
+        self.assertEqual(self.model.eggs.count(), 2)
         self.assertEqual(len(responses.calls), 1)
         self.model.eggs.all()
         self.assertEqual(len(responses.calls), 3)
@@ -456,6 +460,9 @@ class DescribeEmptyAPICollectionField(BaseTestAPICollectionField):
     def test_should_return_none(self):
         self.assertEqual(self.result.all(), [])
 
+    def test_should_have_empty_count(self):
+        self.assertEqual(self.result.count(), 0)
+
 
 class DescribeNonEmptyAPICollectionField(BaseTestAPICollectionField):
     field_class = APICollectionField
@@ -471,5 +478,8 @@ class DescribeNonEmptyAPICollectionField(BaseTestAPICollectionField):
     def test_should_return_collection(self):
         self.assertIsInstance(self.result, APICollection)
 
-    def test_result(self):
+    def test_should_have_object_as_result(self):
         self.assertEqual(self.result.first().egg_id, self.data[0]['egg_id'])
+
+    def test_should_have_count(self):
+        self.assertEqual(self.result.count(), 2)

@@ -75,6 +75,14 @@ class APICollection(APIResource):
         if self._models:
             return self._models[0]
 
+    def count(self):
+        if hasattr(self, '_models'):
+            return len(self._models)
+        elif hasattr(self, '_data') and isinstance(self._data, list):
+            return len(self._data)
+        else:
+            return len(self.all())
+
 
 class APIModel(APIResource):
     fields = {}
