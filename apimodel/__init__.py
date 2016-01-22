@@ -1,4 +1,6 @@
 import importlib
+import concurrent.futures
+from functools import partial
 from urllib.parse import urlparse
 
 import requests
@@ -10,7 +12,6 @@ class NotFound(BaseException):
 
 class APIResource(object):
     finders = {}
-    collection_finders = {}
     url = None
 
     def __init__(self, data=None, lazy_load=False, **kwargs):
@@ -21,7 +22,7 @@ class APIResource(object):
             self._parse_inputs(data, kwargs)
 
     def _parse_inputs(self, data, kwargs):
-        if data:
+        if data is not None:
             if urlparse(str(data)).scheme != '':
                 self._load_data(data)
             else:
@@ -58,13 +59,17 @@ class APICollection(APIResource):
             self.model = model
         super(APICollection, self).__init__(*args, **kwargs)
 
+    def create_model(self, data, lazy_load):
+        return self.model(data=data, lazy_load=lazy_load)
+
     def _load(self, lazy_load):
         if self._lazy_load:
             self._parse_inputs(**self._lazy_load)
             self._lazy_load = False
         if not hasattr(self, '_models'):
-            self._models = [
-                self.model(data=d, lazy_load=lazy_load) for d in self._data]
+            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as e:
+                create_model = partial(self.model, lazy_load=lazy_load)
+                self._models = list(e.map(create_model, self._data))
 
     def all(self):
         self._load(lazy_load=False)

@@ -245,7 +245,6 @@ class DescribeRequestBehavior(TestCase):
         self.model.eggs.all()[1].egg_id
         self.assertEqual(len(responses.calls), 3)
 
-
     @responses.activate
     def test_lazy_loading_of_collections_starting_with_all(self):
         responses.add(responses.GET, SERVER_BASKET_URL.format('myid'),

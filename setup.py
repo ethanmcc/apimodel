@@ -4,7 +4,7 @@ from setuptools import setup
 setup(
     name='apimodel',
     packages=['apimodel'],
-    version='0.4',
+    version='1.0.0',
     description='API-backed Django-style model',
     author='Ethan McCreadie',
     author_email='ethanmcc@gmail.com',
