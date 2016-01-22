@@ -1,9 +1,11 @@
 from unittest import TestCase
+from unittest.mock import Mock
 import json
 
 import responses
 
-from apimodel import APICollection, APIModel, NotFound
+from apimodel import APICollection, APIModel, NotFound, \
+    APIField, APIModelField, APICollectionField
 
 SERVER_BASKET_URL = 'http://example.com/v1/baskets/{0}/'
 # TODO: responses does not support mocking querystring requests
@@ -48,9 +50,6 @@ class DescribeAPIModel(TestCase):
     def test_should_have_empty_fields(self):
         self.assertEqual(self.model.fields, {})
 
-    def test_can_not_instantiate(self):
-        self.assertRaises(NotImplementedError, self.model)
-
 
 class DescribeAPICollection(TestCase):
     @classmethod
@@ -63,20 +62,19 @@ class DescribeAPICollection(TestCase):
     def test_should_have_null_model(self):
         self.assertIsNone(self.collection.model)
 
-    def test_can_not_instantiate(self):
-        self.assertRaises(NotImplementedError, self.collection)
-
 
 class Candy(APIModel):
     fields = {
-        'candy_id': str,
+        'candy_id': APIField(str),
     }
 
 
 class Egg(APIModel):
     fields = {
-        'egg_id': str,
+        'egg_id': APIField(str),
+        'basket_id': APIField(str),
     }
+
     finders = {
         'basket_id': SERVER_BASKET_URL,
     }
@@ -88,17 +86,33 @@ class Basket(APIModel):
     }
 
     fields = {
-        'basket_id': str,
-        'candies': ['Candy'],
-        'eggs': [Egg],
-        'egg': Egg,
-        'empty': str,
+        'basket_id': APIField(str),
+        'candies': APICollectionField(model=Candy),
+        'eggs': APICollectionField(model=Egg),
+        'egg': APIModelField(model=Egg),
+        'empty': APIField(str),
     }
 
 
-class EggCollection(APICollection):
-    url = 'http://example.com/v1/eggs/'
-    model = Egg
+class CandyCollection(APICollection):
+    model = Candy
+
+
+class BetterBasket(APIModel):
+    finders = {
+        'basket_id': SERVER_BASKET_URL,
+    }
+
+    fields = {
+        'basket_id': APIField(str),
+        'candies': APICollectionField(model=Candy),
+        'eggs': APICollectionField(
+            model=Egg,
+            url='%sbasket_id={0.basket_id}' % SERVER_EGG_COLLECTION_URL,
+        ),
+        'egg': APIModelField(model=Egg),
+        'empty': APIField(str),
+    }
 
 
 class BasketCollection(APICollection):
@@ -116,6 +130,11 @@ class DescribeSubclassAPIModel(TestCase):
 
     def test_can_not_be_instantiated_with_no_args(self):
         self.assertRaises(ValueError, self.model)
+
+
+class EggCollection(APICollection):
+    url = 'http://example.com/v1/eggs/'
+    model = Egg
 
     def test_can_not_be_instantiated_with_invalid_key(self):
         self.assertRaises(ValueError, self.model, jawn='turkey')
@@ -170,9 +189,8 @@ class DescribeSubclassInstance(TestCase):
         self.assertEqual(self.model.basket_id, 'myid')
 
     def test_populates_collections(self):
-        self.assertIsInstance(self.model.candies[0], Candy)
-        self.assertEqual(self.model.candies[0].candy_id,
-                         'mycandy')
+        self.assertIsInstance(self.model.candies.first(), Candy)
+        self.assertEqual(self.model.candies.first().candy_id, 'mycandy')
 
     @responses.activate
     def test_populates_collections_from_urls(self):
@@ -180,9 +198,9 @@ class DescribeSubclassInstance(TestCase):
                       body=SERVER_EGG_JSON_1, content_type='application/json')
         responses.add(responses.GET, SERVER_EGG_URL.format('regular'),
                       body=SERVER_EGG_JSON_2, content_type='application/json')
-        self.assertIsInstance(self.model.eggs[0], Egg)
-        self.assertIsInstance(self.model.eggs[1], Egg)
-        self.assertIn(self.model.eggs[0].egg_id, ['organic', 'regular'])
+        self.assertIsInstance(self.model.eggs.first(), Egg)
+        self.assertIsInstance(self.model.eggs.all()[1], Egg)
+        self.assertIn(self.model.eggs.first().egg_id, ['organic', 'regular'])
 
 
 class DescribeRequestBehavior(TestCase):
@@ -206,7 +224,6 @@ class DescribeRequestBehavior(TestCase):
         self.model.egg.egg_id
         self.assertEqual(len(responses.calls), 2)
 
-
     @responses.activate
     def test_lazy_loading_of_collections(self):
         responses.add(responses.GET, SERVER_BASKET_URL.format('myid'),
@@ -216,15 +233,31 @@ class DescribeRequestBehavior(TestCase):
         responses.add(responses.GET, SERVER_EGG_URL.format('regular'),
                       body=SERVER_EGG_JSON_2, content_type='application/json')
         self.model = Basket(basket_id='myid')
-        self.model.eggs
         self.assertEqual(len(responses.calls), 1)
-        self.model.eggs[0]
+        self.model.eggs.first()
         self.assertEqual(len(responses.calls), 1)
-        self.model.eggs[0].egg_id
+        self.assertEqual(self.model.eggs.count(), 2)
+        self.assertEqual(len(responses.calls), 1)
+        self.model.eggs.first().egg_id
         self.assertEqual(len(responses.calls), 2)
-        self.model.eggs[1]
+        self.model.eggs.all()[1]
         self.assertEqual(len(responses.calls), 2)
-        self.model.eggs[1].egg_id
+        self.model.eggs.all()[1].egg_id
+        self.assertEqual(len(responses.calls), 3)
+
+    @responses.activate
+    def test_lazy_loading_of_collections_starting_with_all(self):
+        responses.add(responses.GET, SERVER_BASKET_URL.format('myid'),
+                      body=SERVER_BASKET_JSON, content_type='application/json')
+        responses.add(responses.GET, SERVER_EGG_URL.format('organic'),
+                      body=SERVER_EGG_JSON_1, content_type='application/json')
+        responses.add(responses.GET, SERVER_EGG_URL.format('regular'),
+                      body=SERVER_EGG_JSON_2, content_type='application/json')
+        self.model = Basket(basket_id='myid')
+        self.assertEqual(len(responses.calls), 1)
+        self.assertEqual(self.model.eggs.count(), 2)
+        self.assertEqual(len(responses.calls), 1)
+        self.model.eggs.all()
         self.assertEqual(len(responses.calls), 3)
 
 
@@ -283,8 +316,6 @@ class DescribeEmptyCollectionWithFinder(TestCase):
     @classmethod
     @responses.activate
     def setUpClass(cls):
-        import logging
-        logging.error(SERVER_BASKET_SEARCH_URL.format('myid2'))
         responses.add(responses.GET, SERVER_BASKET_SEARCH_URL.format('myid2'),
                       body=json.dumps([]),
                       content_type='application/json')
@@ -296,3 +327,158 @@ class DescribeEmptyCollectionWithFinder(TestCase):
     def test_first_should_return_none(self):
         model = self.collection.first()
         self.assertIsNone(model)
+
+
+class DescribeModelWithCollectionFinderAndEmptyCollection(TestCase):
+    @classmethod
+    @responses.activate
+    def setUpClass(cls):
+        responses.add(responses.GET,
+                      SERVER_BASKET_URL.format('myid2'),
+                      json=BASKET2_DATA)
+        responses.add(responses.GET,
+                      '{}basket_id=myid2'.format(SERVER_EGG_COLLECTION_URL),
+                      body=json.dumps([]),
+                      content_type='application/json')
+        cls.model = BetterBasket(basket_id='myid2')
+        cls.eggs = cls.model.eggs.all()
+        cls.egg = cls.model.eggs.first()
+
+    def test_should_have_models(self):
+        self.assertEqual(len(self.eggs), 0)
+
+    def test_first_should_return_none(self):
+        self.assertIsNone(self.egg)
+
+
+class DescribeModelWithCollectionFinderAndCollection(TestCase):
+    @classmethod
+    @responses.activate
+    def setUpClass(cls):
+        responses.add(responses.GET,
+                      SERVER_BASKET_URL.format('myid2'),
+                      json=BASKET2_DATA)
+        responses.add(responses.GET,
+                      '{}basket_id=myid2'.format(SERVER_EGG_COLLECTION_URL),
+                      body=SERVER_EGG_COLLECTION,
+                      content_type='application/json')
+        cls.model = BetterBasket(basket_id='myid2')
+        cls.eggs = cls.model.eggs.all()
+        cls.egg = cls.model.eggs.first()
+
+    def test_should_have_models(self):
+        self.assertEqual(len(self.eggs), 2)
+
+    def test_first_should_return_none(self):
+        self.assertEqual(self.egg.egg_id, 'organic')
+
+
+class BaseTestAPIField(TestCase):
+    field_class = APIField
+    data = None
+    wrapper_func = Mock()
+
+    @classmethod
+    @responses.activate
+    def setUpClass(cls):
+        cls.configure()
+        cls.execute()
+
+    @classmethod
+    def configure(cls):
+        pass
+
+    @classmethod
+    def execute(cls):
+        cls.field = cls.field_class(wrapper_func=cls.wrapper_func)
+        cls.result = cls.field.load(cls.data)
+
+
+class BaseTestAPIModelField(BaseTestAPIField):
+
+    @classmethod
+    def execute(cls):
+        cls.field = cls.field_class(model=cls.wrapper_func)
+        cls.result = cls.field.load(cls.data)
+
+
+class BaseTestAPICollectionField(BaseTestAPIField):
+
+    @classmethod
+    def execute(cls):
+        cls.field = cls.field_class(model=cls.wrapper_func,
+                                    url=SERVER_EGG_COLLECTION_URL)
+        cls.result = cls.field.load(cls.data)
+
+
+class DescribeEmptyAPIField(BaseTestAPIField):
+    def test_should_return_none(self):
+        self.assertIsNone(self.result)
+
+
+class DescribeNonEmptyAPIField(BaseTestAPIField):
+    data = b'hello'
+
+    def test_should_return_string(self):
+        self.assertEqual(self.result, self.wrapper_func.return_value)
+
+    def test_wrapper_is_called(self):
+        self.wrapper_func.assertCalledOnceWith(self.data)
+
+
+class DescribeEmptyAPIModelField(BaseTestAPIModelField):
+    field_class = APIModelField
+    wrapper_func = Egg
+
+    def test_should_return_none(self):
+        self.assertIsNone(self.result)
+
+
+class DescribeNonEmptyAPIModelField(BaseTestAPIModelField):
+    field_class = APIModelField
+    data = json.loads(SERVER_EGG_JSON_2)
+    wrapper_func = Egg
+
+    def test_should_return_model(self):
+        self.assertIsInstance(self.result, Egg)
+
+    def test_should_return_egg(self):
+        self.assertEqual(self.result.egg_id, self.data['egg_id'])
+
+
+class DescribeEmptyAPICollectionField(BaseTestAPICollectionField):
+    field_class = APICollectionField
+    wrapper_func = Egg
+
+    @classmethod
+    def configure(cls):
+        responses.add(responses.GET, SERVER_EGG_COLLECTION_URL,
+                      body=SERVER_EMPTY_EGG_COLLECTION,
+                      content_type='application/json')
+
+    def test_should_return_none(self):
+        self.assertEqual(self.result.all(), [])
+
+    def test_should_have_empty_count(self):
+        self.assertEqual(self.result.count(), 0)
+
+
+class DescribeNonEmptyAPICollectionField(BaseTestAPICollectionField):
+    field_class = APICollectionField
+    data = json.loads(SERVER_EGG_COLLECTION)
+    wrapper_func = Egg
+
+    @classmethod
+    def configure(cls):
+        responses.add(responses.GET, SERVER_EGG_COLLECTION_URL,
+                      body=SERVER_EGG_COLLECTION,
+                      content_type='application/json')
+
+    def test_should_return_collection(self):
+        self.assertIsInstance(self.result, APICollection)
+
+    def test_should_have_object_as_result(self):
+        self.assertEqual(self.result.first().egg_id, self.data[0]['egg_id'])
+
+    def test_should_have_count(self):
+        self.assertEqual(self.result.count(), 2)
